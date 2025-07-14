@@ -70,6 +70,15 @@ steps:
         mkdir -p "$temp_dir"
         cd "$temp_dir"
 
+        # Copy reference file and input file to scratch directory
+        echo "Copying reference file and input file to scratch directory..."
+        ref_fasta_basename=$(basename "$ref_fasta")
+        input_file_basename=$(basename "$input_file")
+        start_time=$SECONDS
+        cp "$ref_fasta" "$ref_fasta_basename"
+        cp "$input_file" "$input_file_basename"
+        echo "Reference file and input file copied to $ref_fasta_basename and $input_file_basename in $((SECONDS - start_time)) seconds"
+
         # Set read group information
         read_group="@RG\tID:${sample_name}\tSM:${sample_name}\tPL:PACBIO"
         
@@ -85,14 +94,14 @@ steps:
           echo "Processing BAM/CRAM with FASTQ conversion"
           ( samtools fastq -@ $AGENT_CPU_CORES -T '*' "$input_file" | \
             sentieon minimap2 -y -t $AGENT_CPU_CORES -a -Y -R "$read_group" \
-            -x "${model_bundle}/minimap2.model" "$ref_fasta" - || \
+            -x "${model_bundle}/minimap2.model" "$ref_fasta_basename" - || \
             { echo "Minimap2 error"; exit 1; } ) | \
             sentieon util sort -o "${sample_name}.bam" -t $AGENT_CPU_CORES --sam2bam -i - || \
             { echo "Alignment failed"; exit 1; }
         else
           echo "Processing FASTQ input directly"
           ( sentieon minimap2 -y -t $AGENT_CPU_CORES -a -Y -R "$read_group" \
-            -x "${model_bundle}/minimap2.model" "$ref_fasta" "$input_file" || \
+            -x "${model_bundle}/minimap2.model" "$ref_fasta_basename" "$input_file_basename" || \
             { echo "Minimap2 error"; exit 1; } ) | \
             sentieon util sort -o "${sample_name}.bam" -t $AGENT_CPU_CORES --sam2bam -i - || \
             { echo "Alignment failed"; exit 1; }
@@ -101,6 +110,7 @@ steps:
         duration=$((SECONDS - start_time))
         file_size=$(stat -c%s "${sample_name}.bam")
         cp "${sample_name}.bam"* "$output_folder"
+        rm "$ref_fasta_basename" "$input_file_basename"
         
         echo "Alignment completed in $duration seconds"
         echo "Output file size: $file_size bytes"

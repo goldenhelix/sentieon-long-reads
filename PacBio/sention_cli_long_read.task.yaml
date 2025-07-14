@@ -123,6 +123,7 @@ steps:
 
         # Get sample name from input BAM file (without extension)
         input_basename=$(basename "$input_file")
+        ref_fasta_basename=$(basename "$ref_fasta")
         
         # Copy input file to scratch directory for better performance
         echo "Copying input file to scratch directory..."
@@ -133,9 +134,10 @@ steps:
 
         # Copy reference file to scratch directory
         echo "Copying reference file to scratch directory..."
+        local_ref_fasta="/scratch/${ref_fasta_basename}"
         start_time=$SECONDS
-        cp "$ref_fasta" /scratch/
-        echo "Reference file copied to $ref_fasta in $((SECONDS - start_time)) seconds"
+        cp "$ref_fasta" "$local_ref_fasta"
+        echo "Reference file copied to $local_ref_fasta in $((SECONDS - start_time)) seconds"
         
         # If sample name is not set, get it as the basename of inputfile
         if [ -z "$sample_name" ]; then
@@ -164,7 +166,7 @@ steps:
         temp_output_file="/scratch/output/${sample_name}.vcf.gz"
 
         sentieon-cli dnascope-longread \
-          -r "$ref_fasta" \
+          -r "$local_ref_fasta" \
           -i "$local_input_file" \
           -m "$model_file" \
           -t $AGENT_CPU_CORES \
