@@ -1,0 +1,184 @@
+name: Sentieon DNAscope Long-Read
+description: Variant calling with HiFi or ONT aligned BAM inputs
+
+parameters:
+  - name: input_file
+    label: BAM Input
+    help: Aligned BAM PacBio HiFi or ONT file
+    type: file
+    supports_location_mode: 'read_only'
+
+  - name: tech
+    label: Sequencing Technology
+    help: Sequencing technology used to generate the reads
+    type: enum
+    choices: ["HiFi", "ONT"]
+    value: "HiFi"
+
+  - name: sample_name
+    label: Sample Name (Optional)
+    type: string
+    optional: true
+
+  - name: output_folder
+    label: Output Folder
+    help: Folder where output files will be written
+    type: directory
+    supports_location_mode: 'no_append'
+
+  - name: ref_fasta
+    label: Reference File (FASTA)
+    type: file
+    value: "CloudStorage/resources/hg38_noalt/GCA_000001405.15_GRCh38_no_alt_analysis_set_maskedGRC_exclusions_v2.fasta"
+    supports_location_mode: 'read_only'
+
+  - name: bed_file
+    label: Region BED File
+    help: Limit variant calling to the intervals inside the BED file
+    type: file
+    optional: true
+    supports_location_mode: 'read_only'
+
+  - name: haploid_bed
+    label: Haploid Regions BED
+    help: BED file of haploid regions for haploid variant calling
+    type: file
+    optional: true
+    supports_location_mode: 'read_only'
+
+  - name: model_base_path
+    group: Advanced Options
+    label: Sentieon Model Base Path
+    help: Base path for Sentieon model bundles
+    type: directory
+    value: "CloudStorage/resources/sentieon_models"
+    supports_location_mode: 'read_only'
+
+  - name: gvcf
+    group: Advanced Options
+    label: Generate gVCF
+    help: Generate a gVCF output file along with the VCF
+    type: boolean
+    value: "true"
+
+  - name: skip_small_variants
+    group: Advanced Options
+    label: Skip Small Variants
+    help: Skip small variant (SNV/indel) calling
+    type: boolean
+    value: "false"
+
+  - name: skip_svs
+    group: Advanced Options
+    label: Skip SVs
+    help: Skip structural variant calling
+    type: boolean
+    value: "false"
+
+  - name: skip_mosdepth
+    group: Advanced Options
+    label: Skip Mosdepth QC
+    help: Skip QC with mosdepth
+    type: boolean
+    value: "false"
+
+  - name: dry_run
+    group: Advanced Options
+    label: Dry Run
+    help: Run in dry run mode without executing analysis
+    type: boolean
+    value: "false"
+
+
+agent_requirements:
+  cpu_cores: 32
+  memory_gb: 64
+
+#agent_requirements:
+#  cpu_cores: 64
+#  memory_gb: 128
+#  agent_profile: azure_extra_large # azure_cpu_optimized
+
+steps:
+  - name: secondary
+    description: Run secondary analysis
+    type: cmd
+    docker:
+      image: registry.goldenhelix.com/gh/sentieon:latest
+    args:
+      - |-
+        set -exvuo pipefail
+
+        # License configuration
+        export SENTIEON_LICENSE="$GH_SERVER:8990"
+
+        echo "CPU Cores: $AGENT_CPU_CORES"
+        bwt_mem=$((AGENT_MEMORY_GB - 2))
+        echo "BWA Max Mem: ${bwt_mem}GB"
+
+        export bwt_max_mem="$bwt_mem"G
+
+        cd /scratch
+        export SENTIEON_TMPDIR=/scratch
+
+        # Get sample name from input BAM file (without extension)
+        input_basename=$(basename "$input_file")
+        ref_fasta_basename=$(basename "$ref_fasta")
+        
+        # Copy input file to scratch directory for better performance
+        echo "Copying input file to scratch directory..."
+        local_input_file="/scratch/${input_basename}"
+        start_time=$SECONDS
+        cp "$input_file"* /scratch/
+        echo "Input file copied to $local_input_file in $((SECONDS - start_time)) seconds"
+
+        # Copy reference file to scratch directory
+        echo "Copying reference file to scratch directory..."
+        local_ref_fasta="/scratch/${ref_fasta_basename}"
+        start_time=$SECONDS
+        cp "$ref_fasta" "$local_ref_fasta"
+        echo "Reference file copied to $local_ref_fasta in $((SECONDS - start_time)) seconds"
+        
+        # If sample name is not set, get it as the basename of inputfile
+        if [ -z "$sample_name" ]; then
+          sample_name=${input_basename%%.*}
+        fi
+        echo "Sample name: $sample_name"
+        
+        # Define output file name based on sample name
+        output_file="${output_folder}/${sample_name}.vcf.gz"
+        echo "Output will be written to: $output_file"
+
+        # Select the appropriate model based on technology
+        if [ "$tech" = "HiFi" ]; then
+          model_file="${model_base_path}/DNAscopePacBio2.1.bundle"
+        elif [ "$tech" = "ONT" ]; then
+          model_file="${model_base_path}/DNAscopeONT2.1.bundle"
+        else
+          echo "Error: Unknown technology '$tech'"
+          exit 1
+        fi
+        
+        echo "Using model bundle: $model_file"
+
+        # Create temporary output directory
+        mkdir -p /scratch/output
+        temp_output_file="/scratch/output/${sample_name}.vcf.gz"
+
+        sentieon-cli dnascope-longread \
+          -r "$local_ref_fasta" \
+          -i "$local_input_file" \
+          -m "$model_file" \
+          -t $AGENT_CPU_CORES \
+          $([ -n "$bed_file" ] && echo "-b \"$bed_file\"") \
+          $([ -n "$haploid_bed" ] && echo "--haploid-bed \"$haploid_bed\"") \
+          $([ "$gvcf" = "true" ] && echo "--gvcf") \
+          --tech "$tech" \
+          $([ "$dry_run" = "true" ] && echo "--dry-run") \
+          $([ "$skip_small_variants" = "true" ] && echo "--skip-small-variants") \
+          $([ "$skip_svs" = "true" ] && echo "--skip-svs") \
+          $([ "$skip_mosdepth" = "true" ] && echo "--skip-mosdepth") \
+          "$temp_output_file"
+
+        # Move all output files to the destination folder
+        mv /scratch/output/* "$output_folder/"
