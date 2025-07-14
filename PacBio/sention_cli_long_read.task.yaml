@@ -6,6 +6,7 @@ parameters:
     label: BAM Input
     help: Aligned BAM PacBio HiFi or ONT file
     type: file
+    supports_location_mode: 'read_only'
 
   - name: tech
     label: Sequencing Technology
@@ -23,23 +24,27 @@ parameters:
     label: Output Folder
     help: Folder where output files will be written
     type: directory
+    supports_location_mode: 'no_append'
 
   - name: ref_fasta
     label: Reference File (FASTA)
     type: file
     value: "CloudStorage/resources/hg38_noalt/GCA_000001405.15_GRCh38_no_alt_analysis_set_maskedGRC_exclusions_v2.fasta"
+    supports_location_mode: 'read_only'
 
   - name: bed_file
     label: Region BED File
     help: Limit variant calling to the intervals inside the BED file
     type: file
     optional: true
+    supports_location_mode: 'read_only'
 
   - name: haploid_bed
     label: Haploid Regions BED
     help: BED file of haploid regions for haploid variant calling
     type: file
     optional: true
+    supports_location_mode: 'read_only'
 
   - name: model_base_path
     group: Advanced Options
@@ -47,6 +52,7 @@ parameters:
     help: Base path for Sentieon model bundles
     type: directory
     value: "CloudStorage/resources/sentieon_models"
+    supports_location_mode: 'read_only'
 
   - name: gvcf
     group: Advanced Options
