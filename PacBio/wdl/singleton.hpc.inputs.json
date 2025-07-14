@@ -1,0 +1,12 @@
+{
+    "humanwgs_singleton.sample_id": "HG002",
+    "humanwgs_singleton.sex": "MALE",
+    "humanwgs_singleton.hifi_reads": [
+      "/home/ghuser/Workspace/CloudStorage/PacBio/HG002-004 Trio/HG002-rep1.hifi_reads.bam"
+    ],
+    "humanwgs_singleton.phenotypes": "",
+    "humanwgs_singleton.ref_map_file": "/home/ghuser/Workspace/CloudStorage/resources/hifi-wdl-resources-v2.0.0/GRCh38.ref_map.v2p0p0.template.tsv",
+    "humanwgs_singleton.tertiary_map_file": "/home/ghuser/Workspace/CloudStorage/resources/hifi-wdl-resources-v2.0.0/GRCh38.tertiary_map.v2p0p0.template.tsv",
+    "humanwgs_singleton.backend": "HPC",
+    "humanwgs_singleton.preemptible": true
+  }

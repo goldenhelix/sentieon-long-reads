@@ -1,0 +1,80 @@
+name: PacBio HiFi WGS Pipeline
+description: PacBio HiFi human whole genome sequencing pipeline for individual samples.
+
+agent_requirements:
+  cpu_cores: 64
+  memory_gb: 128
+  agent_profile: azure_extra_large
+
+parameters:
+  - name: input_file
+    label: HiFi uBAM Input
+    help: Unaligned BAM (uBAM) PacBio HiFi reads
+    type: file
+
+  - name: sample_id
+    label: Sample ID
+    type: string
+
+  - name: output_file
+    label: Output VCF File
+    type: file
+    pattern_match:
+      - "*.vcf.gz"
+    create: true
+
+  - name: sex
+    label: Sex
+    type: enum
+    optional: true
+    choices:
+      - MALE
+      - FEMALE
+
+  - name: ref_map_file
+    label: Ref Map File
+    type: file
+    value: "/CloudStorage/resources/hifi-wdl-resources-v2.0.0/GRCh38.ref_map.v2p0p0.template.tsv"
+
+  - name: tertiary_map_file
+    label: Tertiary Map File
+    type: file
+    value: "/CloudStorage/resources/hifi-wdl-resources-v2.0.0/GRCh38.tertiary_map.v2p0p0.template.tsv"
+
+steps:
+- name: WDL task
+  type: cmd
+  description: Run the wdl workflow
+  env:
+    MINIWDL__SCHEDULER__CONTAINER_BACKEND: udocker
+    MINIWDL__FILE_IO__ALLOW_ANY_INPUT: "true"
+    MINIWDL__SCHEDULER__TASK_CONCURRENCY: "1"
+    UDOCKER_DIR: '/scratch/.udocker'
+  args:
+      - |-
+        set -exvuo pipefail
+        # Create JSON structure using environment variables
+        cat > /scratch/inputs.json << EOF
+        {
+            "humanwgs_singleton.sample_id": "$sample_id",
+            "humanwgs_singleton.sex": "$sex",
+            "humanwgs_singleton.hifi_reads": [
+              "$input_file"
+            ],
+            "humanwgs_singleton.phenotypes": "",
+            "humanwgs_singleton.ref_map_file": "$ref_map_file",
+            "humanwgs_singleton.tertiary_map_file": "$tertiary_map_file",
+            "humanwgs_singleton.backend": "HPC",
+            "humanwgs_singleton.preemptible": true
+        }
+        EOF
+        cat /scratch/inputs.json
+
+        miniwdl run \
+          ${TASK_DIR}/wdl/singleton.wdl \
+          --dir /scratch \
+          --runtime-cpu-max=$AGENT_CPU_CORES \
+          --runtime-memory-max=${AGENT_MEMORY_GB}G \
+          -i /scratch/inputs.json 
+
+        cp -R /scratch/_LAST/* .

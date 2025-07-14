@@ -1,0 +1,112 @@
+name: PacBio Sentieon Align
+description: Re-align an input BAM/CRAM/uBAM/uCRAM file with minimap2
+
+parameters:
+  - name: input_file
+    label: Input BAM or FASTQ File
+    type: file
+
+  - name: sample_name
+    label: Sample Name (Optional)
+    type: string
+    optional: true
+
+  - name: output_folder
+    label: Output Folder
+    type: directory
+
+  - name: model_bundle
+    label: Model Bundle File
+    type: file
+    value: "CloudStorage/resources/sentieon_models/DNAscopePacBio2.1.bundle"
+
+  - name: ref_fasta
+    label: Reference File (FASTA)
+    type: file
+    value: "CloudStorage/resources/hg38_noalt/GCA_000001405.15_GRCh38_no_alt_analysis_set_maskedGRC_exclusions_v2.fasta"
+
+agent_requirements:
+  cpu_cores: 32
+  memory_gb: 64
+
+# agent_requirements:
+#   cpu_cores: 64
+#   memory_gb: 128
+#   agent_profile: azure_extra_large # azure_cpu_optimized
+
+steps:
+  - name: align
+    description: Run alignment
+    type: cmd
+    docker:
+      image: registry.goldenhelix.com/gh/sentieon:latest
+    args: 
+      - |-
+        set -exvuo pipefail
+
+        # License configuration
+        export SENTIEON_LICENSE="$GH_SERVER:8990"
+
+        echo "CPU Cores: $AGENT_CPU_CORES"
+        mem_gb=$((AGENT_MEMORY_GB - 2))
+        echo "Available Memory: ${mem_gb}GB"
+
+        # If sample name is not set, get it as the basename of inputfile
+        if [ -z "$sample_name" ]; then
+          sample_name=$(basename "$input_file")
+          sample_name="${sample_name%%.*}"
+        fi
+        echo "Sample name: $sample_name"
+
+        # Define output filename
+        output_bam="${output_folder}/${sample_name}.bam"
+        if [ -f "${output_bam}" ]; then
+          echo "Output already exists: ${output_bam}"
+          exit 0
+        fi
+
+        # Use scratch directory for temporary files
+        temp_dir=/scratch
+        mkdir -p "$temp_dir"
+        cd "$temp_dir"
+
+        # Set read group information
+        read_group="@RG\tID:${sample_name}\tSM:${sample_name}\tPL:PACBIO"
+        
+        echo "Input file: $input_file"
+        echo "Output: $output_bam"
+        
+        # Run the alignment
+        start_time=$SECONDS
+        
+        # Run minimap2 and pipe to sorting utility
+        # Check file extension and process accordingly
+        if [[ "$input_file" == *.bam ]]; then
+          echo "Processing BAM/CRAM with FASTQ conversion"
+          ( samtools fastq -@ $AGENT_CPU_CORES -T '*' "$input_file" | \
+            sentieon minimap2 -y -t $AGENT_CPU_CORES -a -Y -R "$read_group" \
+            -x "${model_bundle}/minimap2.model" "$ref_fasta" - || \
+            { echo "Minimap2 error"; exit 1; } ) | \
+            sentieon util sort -o "${sample_name}.bam" -t $AGENT_CPU_CORES --sam2bam -i - || \
+            { echo "Alignment failed"; exit 1; }
+        else
+          echo "Processing FASTQ input directly"
+          ( sentieon minimap2 -y -t $AGENT_CPU_CORES -a -Y -R "$read_group" \
+            -x "${model_bundle}/minimap2.model" "$ref_fasta" "$input_file" || \
+            { echo "Minimap2 error"; exit 1; } ) | \
+            sentieon util sort -o "${sample_name}.bam" -t $AGENT_CPU_CORES --sam2bam -i - || \
+            { echo "Alignment failed"; exit 1; }
+        fi
+        #  --cram_write_options version=3.0,compressor=rans 
+        duration=$((SECONDS - start_time))
+        file_size=$(stat -c%s "${sample_name}.bam")
+        cp "${sample_name}.bam"* "$output_folder"
+        
+        echo "Alignment completed in $duration seconds"
+        echo "Output file size: $file_size bytes"
+        echo "Output: $output_folder/${sample_name}.bam"
+        
+        # Print total disk usage of output directory
+        echo "Disk usage: $(du -sh "$output_folder" | cut -f1)"
+        
+        cd "$TASK_DIR"

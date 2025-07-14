@@ -1,0 +1,47 @@
++ sentieon minimap2 -y -t 64 -a -Y -R '@RG\tID:HG004-rep1\tSM:HG004-rep1\tPL:PACBIO' -x /w/workspace/CloudStorage/resources/sentieon_models/DNAscopePacBio2.1.bundle/minimap2.model /w/workspace/CloudStorage/resources/hg38_noalt/GCA_000001405.15_GRCh38_no_alt_analysis_set_maskedGRC_exclusions_v2.fasta.gz input.bam
++ sentieon util sort -o HG004-rep1.bam -t 64 --sam2bam -i -
+
++ sentieon minimap2 -y -t 64 -a -Y -R '@RG\tID:HG002-rep1\tSM:HG002-rep1\tPL:PACBIO' -x /w/workspace/CloudStorage/resources/sentieon_models/DNAscopePacBio2.1.bundle/minimap2.model /w/workspace/CloudStorage/resources/hg38_noalt/GCA_000001405.15_GRCh38_no_alt_analysis_set_maskedGRC_exclusions_v2.fasta '/w/workspace/CloudStorage/PacBio/HG002-004 Trio/HG002-rep1.hifi_reads.subset.bam'
++ sentieon util sort -o HG002-rep1.bam -t 64 --sam2bam -i -
+
+/CloudStorage/resources/hg38/Homo_sapiens_assembly38.fasta
+
+
+"$sentieon_dir/bin/sentieon" minimap2 \
+    -ax map-hifi \
+    -R "@RG\tID:${group}\tSM:${sample}\tPL:${platform}" \
+    -K 10000000 \
+    "$reference" \
+    "$fastq" |
+"$sentieon_dir/bin/sentieon" util sort \
+    -r "$reference" \
+    -o "${sample}_sorted.bam" \
+    -t "$number_of_threads" \
+    --sam2bam \
+    -i -
+
+HG01190.fastq.gz
+/CloudStorage/PacBio/PGx/HG01190.fastq.gz
+
+uBAM to FASTQ for input to minmap2
+
+samtools fastq -@ 64 -T '*' HG002-rep1.hifi_reads.subset.bam | cat
+
+
+[ ] Try sentieon-cli dry run with fastq (needs a read-group) - have fastq vs uBAM inputs branches of script
+[ ] Set up variant calling downstream task - based on dry-run commands
+[ ] CRAM causing problems in sentieon-clie?
+
+
+
+# script 
+export PATH=$PATH:"$sentieon_dir/bin/sentieon"
+source ~/.bashrc
+
+"${script_dir}/long_read/dnascope_HiFi.sh" \
+    -r "$reference" \
+    -i "$output_name" \
+    -m "${script_dir}/long_read/DNAscopePacBio2.1.bundle" \
+    -g \
+    "${sample}_dnascope_hifi.vcf.gz"
+

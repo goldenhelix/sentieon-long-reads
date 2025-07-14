@@ -1,0 +1,25 @@
+agent_requirements:
+  cpu_cores: 1
+  memory_gb: 1
+description: Download reference data bundle for PacificBiosciences/HiFi-human-WGS-WDL
+name: Download PacBio Reference Data Resources
+parameters:
+  - name: output_directory
+    label: Output Resource Directory
+    type: directory
+    value: /CloudStorage/resources
+
+steps:
+- name: WDL task
+  type: cmd
+  description: Run the wdl workflow
+  args:
+      - |-
+        set -exvuo pipefail
+        mkdir -p $output_directory
+        #curl -o resources.tar  https://zenodo.org/records/14908106/files/hifi-wdl-resources-v2.1.0.tar
+        #tar -xf resources.tar -C "$output_directory"
+        #rm resources.tar
+        find "$output_directory/hifi-wdl-resources-v2.0.0" -name "*.tsv" -type f -exec sed -i "s|hifi-wdl-resources-v2|hifi-wdl-resources-v2.0.0|g" {} \;
+        find "$output_directory/hifi-wdl-resources-v2.0.0" -name "*.tsv" -type f -exec sed -i "s|<prefix>|${output_directory}|g" {} \;
+        find "$output_directory/hifi-wdl-resources-v2.0.0" -name "*.tsv" -type f -exec sed -i "s|${WORKSPACE_DIR}|\$WORKSPACE_DIR|g" {} \;
