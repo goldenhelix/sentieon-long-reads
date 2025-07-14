@@ -124,6 +124,12 @@ steps:
         start_time=$SECONDS
         cp "$input_file"* /scratch/
         echo "Input file copied to $local_input_file in $((SECONDS - start_time)) seconds"
+
+        # Copy reference file to scratch directory
+        echo "Copying reference file to scratch directory..."
+        start_time=$SECONDS
+        cp "$ref_fasta" /scratch/
+        echo "Reference file copied to $ref_fasta in $((SECONDS - start_time)) seconds"
         
         # If sample name is not set, get it as the basename of inputfile
         if [ -z "$sample_name" ]; then
