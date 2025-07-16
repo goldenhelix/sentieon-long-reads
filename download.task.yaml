@@ -1,0 +1,193 @@
+name: Download Genomic Reference Resources
+description: Download reference genomes and model files for genomic analysis
+
+agent_requirements:
+  cpu_cores: 0
+  memory_gb: 1
+
+parameters: 
+  - name: download_hg38_noalt
+    label: GRCh38 No Alt Reference
+    help: GRCh38 reference that masks the erroneous copy of the duplicated genes and contains no alternate contigs
+    group: Reference Genomes
+    type: boolean
+    value: "true"
+    
+  - name: download_hg37_g1k
+    label: GRCh37 g1k Reference
+    help: GRCh37 reference genome from the 1000 Genomes Project
+    group: Reference Genomes
+    type: boolean
+    value: "false"
+    
+  - name: download_shortread_models
+    label: Sentieon Short Read Models
+    help: Models for Illumina, Element, MGI and Ultima
+    group: Model Files
+    type: boolean
+    value: "false"
+    
+  - name: download_longread_models
+    label: Sentieon Long Read Models
+    help: Models for PacBio and Oxford Nanopore
+    group: Model Files
+    type: boolean
+    value: "false"
+    
+  - name: download_hybrid_models
+    label: Sentieon Hybrid Models
+    help: Models for short reads and PacBio/ONT
+    group: Model Files
+    type: boolean
+    value: "false"
+
+  - name: target_directory
+    label: Base Folder
+    type: directory
+    supports_location_mode: 'no_append'
+    optional: true
+    group: Advanced Options
+    help: Defaults to the directory specified by RESOURCES_PATH in Workspace Settings
+  
+steps:
+  - name: download_ref
+    description: Download Ref
+    type: cmd
+    args:
+      - |-
+        set -euo pipefail
+
+        # Function to download and verify a file
+        download_and_verify() {
+            local filename=$1
+            local expected_md5=$2
+            local base_url=$3
+            local attempts=0
+            local max_attempts=3
+
+            while [ $attempts -lt $max_attempts ]; do
+                echo "Downloading $filename (attempt $((attempts + 1))/$max_attempts)..."
+                
+                # Download the file with curl
+                rm -f "$filename"
+                curl -s -S --progress-bar -o "$filename" "http://$base_url/$filename"
+                
+                # Get actual checksum
+                actual_md5=$(md5sum "$filename" | cut -d' ' -f1)
+                
+                # Verify the checksum directly
+                if [ "$actual_md5" = "$expected_md5" ]; then
+                    echo "✓ $filename successfully downloaded and verified"
+                    return 0
+                else
+                    echo "✗ Checksum verification failed for $filename"
+                    echo "  Expected: $expected_md5"
+                    echo "  Got:      $actual_md5"
+                    attempts=$((attempts + 1))
+                    if [ $attempts -lt $max_attempts ]; then
+                        echo "Retrying download..."
+                        rm -f "$filename"
+                    fi
+                fi
+            done
+            
+            echo "Failed to download and verify $filename after $max_attempts attempts"
+            return 1
+        }
+
+        # Function to download resources from a manifest
+        download_from_manifest() {
+            local manifest_url=$1
+            local base_url=$2
+            local target_dir=$3
+            
+            # Create the target directory
+            if ! mkdir -p "$target_dir"; then
+                echo "Error: Failed to create directory $target_dir"
+                return 1
+            fi
+            
+            # Change to the target directory
+            cd "$target_dir"
+            
+            # Download and process the manifest
+            echo "Downloading and processing manifest from $manifest_url..."
+            curl -s -S "$manifest_url" | while read -r line; do
+                # Skip empty lines
+                [ -z "$line" ] && continue
+                
+                # Split the line into filename and md5
+                read -r filename md5 <<< "$line"
+                
+                # Download and verify the file
+                if ! download_and_verify "$filename" "$md5" "$base_url"; then
+                    echo "Error: Failed to process $filename"
+                    return 1
+                fi
+            done
+            
+            echo "All files have been successfully downloaded and verified to $target_dir!"
+            return 0
+        }
+
+        # Set the base target directory
+        BASE_DIR="${target_directory}"
+
+        if [ -z "$BASE_DIR" ]; then 
+          BASE_DIR="$WORKSPACE_DIR/${RESOURCES_PATH}"
+          if [ ! -d "$BASE_DIR" ]; then
+            echo "The default resource path does not exist or is not a valid directory at $RESOURCES_PATH"
+            echo "Please update the RESOURCES_PATH in Workspace Settings to point to a valid directory that can be used to download the reference and then re-run this task"
+            exit 1
+          fi
+        fi
+
+        echo "Starting reference resources download..."
+        echo "Base directory: $BASE_DIR"
+
+        # Download GRCh38 No Alt Reference
+        if [ "${download_hg38_noalt}" = "true" ]; then
+            echo "=== Downloading GRCh38 No Alt Reference ==="
+            MANIFEST_URL="http://data.goldenhelix.com/d/secondary_analysis/hg38_noalt/manifest.txt"
+            BASE_URL="data.goldenhelix.com/d/secondary_analysis/hg38_noalt"
+            TARGET_DIR="$BASE_DIR/resources/hg38_noalt"
+            download_from_manifest "$MANIFEST_URL" "$BASE_URL" "$TARGET_DIR"
+        fi
+
+        # Download GRCh37 g1k Reference
+        if [ "${download_hg37_g1k}" = "true" ]; then
+            echo "=== Downloading GRCh37 g1k Reference ==="
+            MANIFEST_URL="http://data.goldenhelix.com/d/secondary_analysis/b37/manifest.txt"
+            BASE_URL="data.goldenhelix.com/d/secondary_analysis/b37"
+            TARGET_DIR="$BASE_DIR/resources/hg37_g1k"
+            download_from_manifest "$MANIFEST_URL" "$BASE_URL" "$TARGET_DIR"
+        fi
+
+        # Download Sentieon Short Read Models
+        if [ "${download_shortread_models}" = "true" ]; then
+            echo "=== Downloading Sentieon Short Read Models ==="
+            MANIFEST_URL="http://data.goldenhelix.com/d/secondary_analysis/models/shortread/manifest.txt"
+            BASE_URL="data.goldenhelix.com/d/secondary_analysis/models/shortread"
+            TARGET_DIR="$BASE_DIR/resources/sentieon_models"
+            download_from_manifest "$MANIFEST_URL" "$BASE_URL" "$TARGET_DIR"
+        fi
+
+        # Download Sentieon Long Read Models
+        if [ "${download_longread_models}" = "true" ]; then
+            echo "=== Downloading Sentieon Long Read Models ==="
+            MANIFEST_URL="http://data.goldenhelix.com/d/secondary_analysis/models/longread/manifest.txt"
+            BASE_URL="data.goldenhelix.com/d/secondary_analysis/models/longread"
+            TARGET_DIR="$BASE_DIR/resources/sentieon_models"
+            download_from_manifest "$MANIFEST_URL" "$BASE_URL" "$TARGET_DIR"
+        fi
+
+        # Download Sentieon Hybrid Models
+        if [ "${download_hybrid_models}" = "true" ]; then
+            echo "=== Downloading Sentieon Hybrid Models ==="
+            MANIFEST_URL="http://data.goldenhelix.com/d/secondary_analysis/models/hybrid/manifest.txt"
+            BASE_URL="data.goldenhelix.com/d/secondary_analysis/models/hybrid"
+            TARGET_DIR="$BASE_DIR/resources/sentieon_models"
+            download_from_manifest "$MANIFEST_URL" "$BASE_URL" "$TARGET_DIR"
+        fi
+
+        echo "All selected reference resources have been downloaded successfully!"
