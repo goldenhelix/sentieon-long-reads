@@ -20,19 +20,27 @@ parameters:
     supports_location_mode: 'no_append'
     help: Folder where output files will be written.
 
-  - name: model_bundle
-    label: Model Bundle File
-    type: file
-    supports_location_mode: 'read_only'
-    help: Model bundle file to use for alignment. HiFi for PacBio HiFi, or ONT for Oxford Nanopore Technology. 
+  - name: tech
+    label: Technology
+    help: Sequencing technology used to generate the reads. 
+    type: enum
+    choices: ["HiFi", "ONT"]
 
   - name: ref_fasta
     label: Reference File (FASTA)
     type: file  
     supports_location_mode: 'read_only'
+    group: Advanced Options
     optional: true
     help: Reference file to use for alignment. If not provided, the default reference file will be used.
 
+  - name: model_base_path
+    label: Sentieon Models Base Path
+    group: Advanced Options 
+    type: directory
+    supports_location_mode: 'read_only'
+    optional: true
+    help: Path to the Sentieon models base directory. If not provided, the default models will be used.
 
 agent_requirements:
   cpu_cores: 32
@@ -98,6 +106,24 @@ steps:
         cp "$ref_fasta".fai "$ref_fasta_basename".fai
         cp "$input_file" "$input_file_basename"
         echo "Reference file and input file copied to $ref_fasta_basename and $input_file_basename in $((SECONDS - start_time)) seconds"
+
+        # If model_base_path is not set, use the default models
+        if [ -z "$model_base_path" ]; then
+          model_base_path="$WORKSPACE_DIR/${RESOURCES_PATH}/${SENTIEON_MODELS_PATH}"
+          if [ ! -d "$model_base_path" ]; then
+            echo "The default models do not exist at $model_base_path"
+            echo "Please run the task Download Sentieon Models to download the models and then re-run this task"
+            exit 1
+          fi
+        fi
+        if [ "$tech" == "ONT" ]; then
+          model_bundle="${model_base_path}/DNAscopeONT2.1.bundle"
+        elif [ "$tech" == "HiFi" ]; then
+          model_bundle="${model_base_path}/DNAscopePacBio2.1.bundle"
+        else
+          echo "Invalid technology: $tech"
+          exit 1
+        fi
 
         # Set read group information
         read_group="@RG\tID:${sample_name}\tSM:${sample_name}\tPL:PACBIO"
