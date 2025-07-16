@@ -150,6 +150,14 @@ steps:
         echo "Output will be written to: $output_file"
 
         # Select the appropriate model based on technology
+        if [ -z "$model_base_path" ]; then
+          model_base_path="$WORKSPACE_DIR/${RESOURCES_PATH}/${SENTIEON_MODELS_PATH}"
+          if [ ! -d "$model_base_path" ]; then
+            echo "The default models do not exist at $model_base_path"
+            echo "Please run the task Download Sentieon Models to download the models and then re-run this task"
+            exit 1
+          fi
+        fi
         if [ "$tech" = "HiFi" ]; then
           model_file="${model_base_path}/DNAscopePacBio2.1.bundle"
         elif [ "$tech" = "ONT" ]; then
