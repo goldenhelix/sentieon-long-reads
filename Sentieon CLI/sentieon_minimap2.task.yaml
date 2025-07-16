@@ -1,10 +1,11 @@
-name: PacBio Sentieon Align
+name: Sentieon Alignment with Minimap2
 description: Re-align an input BAM/CRAM/uBAM/uCRAM file with minimap2
 
 parameters:
   - name: input_file
     label: Input BAM or FASTQ File
     type: file
+    supports_location_mode: 'read_only'
 
   - name: sample_name
     label: Sample Name (Optional)
@@ -14,16 +15,19 @@ parameters:
   - name: output_folder
     label: Output Folder
     type: directory
+    supports_location_mode: 'no_append'
 
   - name: model_bundle
     label: Model Bundle File
     type: file
-    value: "CloudStorage/resources/sentieon_models/DNAscopePacBio2.1.bundle"
+    supports_location_mode: 'read_only'
 
   - name: ref_fasta
     label: Reference File (FASTA)
-    type: file
-    value: "CloudStorage/resources/hg38_noalt/GCA_000001405.15_GRCh38_no_alt_analysis_set_maskedGRC_exclusions_v2.fasta"
+    type: file  
+    supports_location_mode: 'read_only'
+    optional: true
+
 
 agent_requirements:
   cpu_cores: 32
@@ -39,7 +43,7 @@ steps:
     description: Run alignment
     type: cmd
     docker:
-      image: registry.goldenhelix.com/gh/sentieon:latest
+      image: registry.goldenhelix.com/public/sentieon:202503
     args: 
       - |-
         set -exvuo pipefail
@@ -59,7 +63,7 @@ steps:
         echo "Sample name: $sample_name"
 
         # Define output filename
-        output_bam="${output_folder}/${sample_name}.bam"
+        output_bam="${output_folder}/${sample_name}_minimap2.bam"
         if [ -f "${output_bam}" ]; then
           echo "Output already exists: ${output_bam}"
           exit 0
@@ -76,6 +80,7 @@ steps:
         input_file_basename=$(basename "$input_file")
         start_time=$SECONDS
         cp "$ref_fasta" "$ref_fasta_basename"
+        cp "$ref_fasta".fai "$ref_fasta_basename".fai
         cp "$input_file" "$input_file_basename"
         echo "Reference file and input file copied to $ref_fasta_basename and $input_file_basename in $((SECONDS - start_time)) seconds"
 
@@ -96,25 +101,25 @@ steps:
             sentieon minimap2 -y -t $AGENT_CPU_CORES -a -Y -R "$read_group" \
             -x "${model_bundle}/minimap2.model" "$ref_fasta_basename" - || \
             { echo "Minimap2 error"; exit 1; } ) | \
-            sentieon util sort -o "${sample_name}.bam" -t $AGENT_CPU_CORES --sam2bam -i - || \
+            sentieon util sort -o "${sample_name}_minimap2.bam" -t $AGENT_CPU_CORES --sam2bam -i - || \
             { echo "Alignment failed"; exit 1; }
         else
           echo "Processing FASTQ input directly"
           ( sentieon minimap2 -y -t $AGENT_CPU_CORES -a -Y -R "$read_group" \
             -x "${model_bundle}/minimap2.model" "$ref_fasta_basename" "$input_file_basename" || \
             { echo "Minimap2 error"; exit 1; } ) | \
-            sentieon util sort -o "${sample_name}.bam" -t $AGENT_CPU_CORES --sam2bam -i - || \
+            sentieon util sort -o "${sample_name}_minimap2.bam" -t $AGENT_CPU_CORES --sam2bam -i - || \
             { echo "Alignment failed"; exit 1; }
         fi
         #  --cram_write_options version=3.0,compressor=rans 
         duration=$((SECONDS - start_time))
-        file_size=$(stat -c%s "${sample_name}.bam")
-        cp "${sample_name}.bam"* "$output_folder"
+        file_size=$(stat -c%s "${sample_name}_minimap2.bam")
+        cp "${sample_name}_minimap2.bam"* "$output_folder"
         rm "$ref_fasta_basename" "$input_file_basename"
         
         echo "Alignment completed in $duration seconds"
         echo "Output file size: $file_size bytes"
-        echo "Output: $output_folder/${sample_name}.bam"
+        echo "Output: $output_folder/${sample_name}_minimap2.bam"
         
         # Print total disk usage of output directory
         echo "Disk usage: $(du -sh "$output_folder" | cut -f1)"
