@@ -24,8 +24,8 @@ parameters:
     label: Model Bundle File
     type: file
     supports_location_mode: 'read_only'
-    help: Model bundle file to use for alignment. If not provided, the default model bundle file will be used.
-    
+    help: Model bundle file to use for alignment. HiFi for PacBio HiFi, or ONT for Oxford Nanopore Technology. 
+
   - name: ref_fasta
     label: Reference File (FASTA)
     type: file  
