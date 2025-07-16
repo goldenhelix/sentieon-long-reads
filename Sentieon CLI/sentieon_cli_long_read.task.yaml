@@ -29,8 +29,9 @@ parameters:
   - name: ref_fasta
     label: Reference File (FASTA)
     type: file
-    value: "CloudStorage/resources/hg38_noalt/GCA_000001405.15_GRCh38_no_alt_analysis_set_maskedGRC_exclusions_v2.fasta"
+    optional: true
     supports_location_mode: 'read_only'
+    help: Reference file to use for variant calling. If not provided, the default reference file will be used.
 
   - name: bed_file
     label: Region BED File

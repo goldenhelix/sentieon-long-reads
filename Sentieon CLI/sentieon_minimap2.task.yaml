@@ -27,6 +27,7 @@ parameters:
     type: file  
     supports_location_mode: 'read_only'
     optional: true
+    help: Reference file to use for alignment. If not provided, the default reference file will be used.
 
 
 agent_requirements:
