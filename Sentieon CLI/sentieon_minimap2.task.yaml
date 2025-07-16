@@ -3,25 +3,29 @@ description: Re-align an input BAM/CRAM/uBAM/uCRAM file with minimap2
 
 parameters:
   - name: input_file
-    label: Input BAM or FASTQ File
+    label: "Input Alignment File (Default: BAM)"
     type: file
     supports_location_mode: 'read_only'
+    help: Input alignment file to re-align. This workflow supports FASTQs, BAMs, CRAMs, uBAMs, and uCRAMs.
 
   - name: sample_name
     label: Sample Name (Optional)
     type: string
     optional: true
+    help: Sample name to use for the output file. If not provided, the basename of the input file will be used.
 
   - name: output_folder
     label: Output Folder
     type: directory
     supports_location_mode: 'no_append'
+    help: Folder where output files will be written.
 
   - name: model_bundle
     label: Model Bundle File
     type: file
     supports_location_mode: 'read_only'
-
+    help: Model bundle file to use for alignment. If not provided, the default model bundle file will be used.
+    
   - name: ref_fasta
     label: Reference File (FASTA)
     type: file  
