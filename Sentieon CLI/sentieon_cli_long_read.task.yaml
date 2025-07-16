@@ -51,7 +51,6 @@ parameters:
     label: Sentieon Model Base Path
     help: Base path for Sentieon model bundles
     type: directory
-    value: "CloudStorage/resources/sentieon_models"
     supports_location_mode: 'read_only'
 
   - name: gvcf
@@ -104,7 +103,7 @@ steps:
     description: Run secondary analysis
     type: cmd
     docker:
-      image: registry.goldenhelix.com/gh/sentieon:latest
+      image: registry.goldenhelix.com/public/sentieon:202503
     args:
       - |-
         set -exvuo pipefail

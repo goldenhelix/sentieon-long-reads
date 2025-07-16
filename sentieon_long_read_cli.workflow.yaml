@@ -1,0 +1,71 @@
+name: Sentieon Alignment and Variant Calling for Long Read Data with Sentieon CLI
+description: Perform alignment (Sentieon Minimap2) and variant calling (Sentieon CLI) for long read data
+stages:
+  - name: Alignment with Minimap2
+    description: Align long read data with Minimap2
+    task_path: "Sentieon CLI/sentieon_minimap2.task.yaml"
+    depends_on: []
+
+    glob_parameter:
+      label: Input File Base Directory
+      path:
+        type: directory
+        supports_location_mode: 'read_only'
+      glob_ex: '**/*-*.bam'
+      output_parameters:
+        - task_parameter_name: input_file
+          expression: '${file_directory}'
+        - task_parameter_name: sample_name
+          expression: '${2}'
+
+    task_parameters:
+      - name: output_folder
+        label: Output Folder
+        type: directory
+        supports_location_mode: 'no_append'
+
+      - name: model_bundle
+        label: Model Bundle File
+        type: file
+        value: "CloudStorage/resources/sentieon_models/DNAscopePacBio2.1.bundle"
+
+      - name: ref_fasta
+        label: Reference File (FASTA)
+        type: file
+        value: "CloudStorage/resources/hg38_noalt/GCA_000001405.15_GRCh38_no_alt_analysis_set_maskedGRC_exclusions_v2.fasta"
+
+  - name: Variant Calling with Sentieon CLI
+    description: Call variants with Sentieon CLI
+    task_path: "Sentieon CLI/sentieon_cli_long_read.task.yaml"
+    depends_on: ["Alignment with Minimap2"]
+
+    glob_parameter:
+      label: Alignment Folder
+      path:
+        type: stage
+        stage: Alignment with Minimap2
+        parameter: output_folder
+      glob_ex: '**/*_*.bam'
+      output_parameters:
+        - 
+
+    task_parameters:
+      - name: tech
+        label: Sequencing Technology
+        type: enum
+        choices: ["HiFi", "ONT"]
+        value: "HiFi"
+
+      - name: input_file
+        label: Input File
+        type: stage
+        stage: Alignment with Minimap2
+        expression: '${output_folder}/${sample_name}.bam'
+
+      - name: output_folder
+        label: Output Folder
+        type: stage
+        stage: Alignment with Minimap2
+        expression: '${output_folder}'
+
+      
