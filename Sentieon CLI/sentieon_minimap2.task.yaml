@@ -74,6 +74,16 @@ steps:
         mkdir -p "$temp_dir"
         cd "$temp_dir"
 
+        # If ref_fasta is not set, use the default reference file
+        if [ -z "$ref_fasta" ]; then
+          ref_fasta="$WORKSPACE_DIR/${RESOURCES_PATH}/${REFERENCE_PATH}"
+          if [ ! -f "$ref_fasta" ]; then
+            echo "The default reference file does not exist at $ref_fasta"
+            echo "Please run the task Download Genomic Reference to download the reference and then re-run this task"
+            exit 1
+          fi
+        fi
+
         # Copy reference file and input file to scratch directory
         echo "Copying reference file and input file to scratch directory..."
         ref_fasta_basename=$(basename "$ref_fasta")
