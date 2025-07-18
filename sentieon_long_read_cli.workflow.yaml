@@ -14,7 +14,7 @@ stages:
       glob_ex: '**/*-*.bam'
       output_parameters:
         - task_parameter_name: input_file
-          expression: '${file_directory}'
+          expression: '${0}'
         - task_parameter_name: sample_name
           expression: '${2}'
 
@@ -91,22 +91,22 @@ stages:
         label: Sequencing Technology
         type: stage
         stage: Alignment with Minimap2
-        expression: '${tech}'
+        stage_parameter_expression: '${tech}'
 
       - name: output_folder
         label: Output Folder
         type: stage
         stage: Alignment with Minimap2
-        expression: '${output_folder}'
+        stage_parameter_expression: '${output_folder}'
 
       - name: ref_fasta
         label: Reference File (FASTA)
         type: stage
         stage: Alignment with Minimap2
-        expression: '${ref_fasta}'
+        stage_parameter_expression: '${ref_fasta}'
 
       - name: model_base_path
         label: Sentieon Models Base Path
         type: stage
         stage: Alignment with Minimap2
-        expression: '${model_base_path}'
+        stage_parameter_expression: '${model_base_path}'

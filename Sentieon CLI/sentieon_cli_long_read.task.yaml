@@ -123,6 +123,15 @@ steps:
 
         # Get sample name from input BAM file (without extension)
         input_basename=$(basename "$input_file")
+        # Check for ref fasta
+        if [ -z "$ref_fasta" ]; then
+          ref_fasta="$WORKSPACE_DIR/${RESOURCES_PATH}/${REFERENCE_PATH}"
+          if [ ! -f "$ref_fasta" ]; then
+            echo "The default reference file does not exist at $ref_fasta"
+            echo "Please run the task Download Genomic Reference to download the reference and then re-run this task"
+            exit 1
+          fi
+        fi
         ref_fasta_basename=$(basename "$ref_fasta")
         
         # Copy input file to scratch directory for better performance
@@ -137,6 +146,7 @@ steps:
         local_ref_fasta="/scratch/${ref_fasta_basename}"
         start_time=$SECONDS
         cp "$ref_fasta" "$local_ref_fasta"
+        cp "$ref_fasta".fai "$local_ref_fasta".fai
         echo "Reference file copied to $local_ref_fasta in $((SECONDS - start_time)) seconds"
         
         # If sample name is not set, get it as the basename of inputfile
