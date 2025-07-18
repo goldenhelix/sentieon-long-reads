@@ -102,9 +102,9 @@ steps:
         ref_fasta_basename=$(basename "$ref_fasta")
         input_file_basename=$(basename "$input_file")
         start_time=$SECONDS
-        cp "$ref_fasta" "$ref_fasta_basename"
-        cp "$ref_fasta".fai "$ref_fasta_basename".fai
-        cp "$input_file" "$input_file_basename"
+        cp "$ref_fasta" ./"$ref_fasta_basename"
+        cp "$ref_fasta".fai ./"$ref_fasta_basename".fai
+        cp "$input_file" ./"$input_file_basename"
         echo "Reference file and input file copied to $ref_fasta_basename and $input_file_basename in $((SECONDS - start_time)) seconds"
 
         # If model_base_path is not set, use the default models
