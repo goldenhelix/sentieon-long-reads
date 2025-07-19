@@ -110,3 +110,35 @@ stages:
         type: stage
         stage: Alignment with Minimap2
         stage_parameter_expression: '${model_base_path}'
+
+  - name: Create VarSeq Project
+    run_step: optional_default_skip
+    description: Create a VarSeq project from the alignment and variant-calling results
+    task_path: "../Sentieon Short Reads/vspipeline.task.yaml"
+    depends_on: ["Variant Calling with Sentieon CLI"]
+
+    task_parameters:
+      - name: base_path
+        label: Input Folder
+        type: stage
+        stage: Variant Calling with Sentieon CLI
+        stage_parameter_expression: '${output_folder}'
+
+      - name: project_directory
+        label: Project Directory
+        help: "The directory where the VarSeq project will be created (default: AppData/Projects)"
+        type: directory
+        supports_location_mode: 'read_write'
+        value: AppData/Projects
+
+      - name: project_name
+        label: Project Name
+        help: "The name of the VarSeq project to create (default: input directory name)"
+        type: string
+        optional: true
+
+      - name: project_template
+        label: Project Template
+        help: "The template to use for the VarSeq project"
+        type: file
+        supports_location_mode: 'read_only'
