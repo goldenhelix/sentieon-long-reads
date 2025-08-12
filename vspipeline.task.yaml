@@ -1,0 +1,107 @@
+name: VSPipeline Create Project
+description: Create a VarSeq project from a template and input files
+auto_generate_session_for_account: "{workspaceBot}"
+
+agent_requirements:
+  cpu_cores: 4
+  memory_gb: 12
+
+parameters:
+  - name: base_path
+    label: Input Folder
+    help: The input folder of vcf.gz files to import
+    type: directory
+    supports_location_mode: 'read_only'
+
+  - name: project_directory
+    label: Project Directory
+    help: The directory where the VarSeq project will be created
+    type: directory
+    supports_location_mode: 'read_write'
+    value: AppData/Projects
+
+  - name: project_name
+    label: Project Name
+    help: The name of the VarSeq project to create. If left blank, the name of the input folder will be used.
+    type: string
+    optional: true
+
+  - name: project_template
+    label: Project Template
+    help: The template to use for the VarSeq project
+    type: file
+    supports_location_mode: 'read_only'
+    path: /AppData/VarSeq/User Data/ProjectTemplates/
+
+  - name: overwrite_project
+    label: Overwrite Existing VarSeq Projects
+    help: Select to overwrite existing VarSeq projects
+    type: boolean
+    value: "true"
+
+steps:
+  - name: vspipeline
+    description: Run VSPipeline and create a VarSeq project
+    type: cmd
+    docker:
+      image: ${VSPIPELINE_DOCKER_IMAGE}
+    args:
+      - |-
+        set -eu pipefail
+
+        # Set up environment variables from workspace defaults
+        export GOLDENHELIX_USERDATA=${WORKSPACE_DIR}/AppData
+        if [ -d "$WORKSPACE_DIR/AppData/VarSeq/User Data" ]; then
+          export GH_CRASH_DUMP_DIR="$WORKSPACE_DIR/AppData/VarSeq/User Data"
+        fi
+        if [ -d "/scratch" ]; then
+          export GH_TEMPDIR="/scratch"
+        fi
+        
+        # Check if project template exists and matches the current workspace assembly
+        if [ ! -f "$project_template" ]; then
+          echo "Error: Project template file '$project_template' does not exist."
+          exit 1
+        fi
+        if ! grep -q "\"genome\": \"$GH_WORKSPACE_ASSEMBLY\"" "$project_template"; then
+          echo "Error: Project template does not match the current workspace assembly: $GH_WORKSPACE_ASSEMBLY"
+          exit 1
+        fi
+
+        # Create parent directory if it doesn't exist, and check for project directory
+        mkdir -p ${project_directory}
+        if [[ -d "${project_directory}/${project_name}" && "${overwrite_project}" == "false" ]]; then
+          echo "Project directory already exists and overwrite is set to false"
+          exit 1
+        fi
+
+        # If project_name is not provided, use the base directory name
+        if [[ -z "${project_name}" ]]; then
+          project_name=$(basename "${base_path}")
+        fi
+
+        echo "Running VSPipeline and creating VarSeq project"
+        echo "Output path: ${project_directory}/${project_name}"
+
+        cd "${base_path}"
+        vcf_files=$(find . -name "*.vcf.gz" -type f | paste -sd ',' - | sed 's/\([^,]*\)/\1/g')
+
+        if [[ -z "${vcf_files}" ]]; then
+          echo "No VCF files found in the specified directory."
+          exit 1
+        fi
+        
+        # Write the VSPipeline commands to a file
+        cat <<EOF > "${project_directory}/${project_name}.vs-batch"
+        get_version
+        project_create "${project_directory}/${project_name}" "${project_template}" ${overwrite_project:+overwrite=true}
+        import files="${vcf_files}" append_files_with_same_samples=True sample_fields_catalog=SampleCatalog
+        download_required_sources
+        task_wait
+        get_task_list
+        project_close
+        EOF
+
+        /opt/vspipeline/vspipeline -c batch file="${project_directory}/${project_name}.vs-batch" || { echo "VSPipeline failed"; exit 1; }
+
+        rm -rf "${project_directory}/${project_name}.vs-batch"

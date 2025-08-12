@@ -3,7 +3,7 @@ description: Perform alignment (Sentieon Minimap2) and variant calling (Sentieon
 stages:
   - name: Alignment with Minimap2
     description: Align long read data with Minimap2
-    task_path: "Sentieon CLI/sentieon_minimap2.task.yaml"
+    task_path: "sentieon_minimap2.task.yaml"
     depends_on: []
 
     glob_parameter:
@@ -46,7 +46,7 @@ stages:
 
   - name: Variant Calling with Sentieon CLI
     description: Call variants with Sentieon CLI
-    task_path: "Sentieon CLI/sentieon_cli_long_read.task.yaml"
+    task_path: "sentieon_cli_long_read.task.yaml"
     depends_on: ["Alignment with Minimap2"]
 
     glob_parameter:
@@ -114,7 +114,7 @@ stages:
   - name: Create VarSeq Project
     run_step: optional_default_skip
     description: Create a VarSeq project from the alignment and variant-calling results
-    task_path: "../Sentieon Short Reads/vspipeline.task.yaml"
+    task_path: "vspipeline.task.yaml"
     depends_on: ["Variant Calling with Sentieon CLI"]
 
     task_parameters:

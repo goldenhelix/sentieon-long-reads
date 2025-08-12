@@ -94,11 +94,6 @@ agent_requirements:
   cpu_cores: 32
   memory_gb: 64
 
-#agent_requirements:
-#  cpu_cores: 64
-#  memory_gb: 128
-#  agent_profile: azure_extra_large # azure_cpu_optimized
-
 steps:
   - name: secondary
     description: Run secondary analysis
@@ -107,24 +102,68 @@ steps:
       image: registry.goldenhelix.com/public/sentieon:202503
     args:
       - |-
-        set -exvuo pipefail
+        set -eu pipefail
 
         # License configuration
         export SENTIEON_LICENSE="$GH_SERVER:8990"
+        licsrvr=$(sentieon licclnt ping --server "$GH_SERVER:8990")
+        # if [ "$licsrvr" != "0" ]; then
+        #   echo "License server not responding"
+        #   exit 1
+        # else 
+        #   echo "License server responding"
+        # fi
 
-        echo "CPU Cores: $AGENT_CPU_CORES"
-        bwt_mem=$((AGENT_MEMORY_GB - 2))
-        echo "BWA Max Mem: ${bwt_mem}GB"
+        # Agent setup
+        echo "*************************"
+        echo "Agent allocated..."
+        echo -e "\tCPU Cores: $AGENT_CPU_CORES"
+        mem_gb=$((AGENT_MEMORY_GB - 2))
+        echo -e "\tAvailable Memory: ${mem_gb}GB"
+        echo "*************************"
 
-        export bwt_max_mem="$bwt_mem"G
+        # Set BWA memory for Sentieon CLI
+        export bwt_max_mem="${mem_gb}G"
 
-        cd /scratch
-        export SENTIEON_TMPDIR=/scratch
+        # Parameter validation
+        pattern=" | "
+        if [[ "$sample_name" =~ "$pattern" ]]; then
+          echo "Sample name should not contain whitespace"
+          exit 1
+        fi
+
+        # Create output directory if it doesn't exist
+        mkdir -p "$output_folder" || { echo "Failed to create output directory"; exit 1; }
+
+        # Use scratch directory for temporary files
+        workdir="/scratch"
+        mkdir -p "$workdir" || { echo "Failed to create work directory"; exit 1; }
+        cd "$workdir" || { echo "Failed to change to work directory"; exit 1; }
+        
+        # Set up logging
+        logfile=${sample_name}_dnascope_run.log
+        exec > >(tee -a "$logfile") 2>&1 || { echo "Failed to redirect stdout and stderr to $logfile"; exit 1; }
+
+        echo "*************************"
+        echo "Running Sentieon DNAscope Long-Read Analysis..."
+        echo "Input file: $input_file"
+        echo "Technology: $tech"
+        echo "Output folder: $output_folder"
+        echo "*************************"
 
         # Get sample name from input BAM file (without extension)
         input_basename=$(basename "$input_file")
-        # Check for ref fasta
+        
+        # If sample name is not set, get it as the basename of inputfile
+        if [ -z "$sample_name" ]; then
+          sample_name=${input_basename%%.*}
+        fi
+        echo "Sample name: $sample_name"
+
+        # Select reference file
+        echo "Selecting reference file..."
         if [ -z "$ref_fasta" ]; then
+          echo "No reference file provided, using default reference file..."
           ref_fasta="$WORKSPACE_DIR/${RESOURCES_PATH}/${REFERENCE_PATH}"
           if [ ! -f "$ref_fasta" ]; then
             echo "The default reference file does not exist at $ref_fasta"
@@ -134,40 +173,18 @@ steps:
         fi
         ref_fasta_basename=$(basename "$ref_fasta")
         
-        # Copy input file to scratch directory for better performance
-        echo "Copying input file to scratch directory..."
-        local_input_file="/scratch/${input_basename}"
-        start_time=$SECONDS
-        cp "$input_file"* /scratch/
-        echo "Input file copied to $local_input_file in $((SECONDS - start_time)) seconds"
-
-        # Copy reference file to scratch directory
-        echo "Copying reference file to scratch directory..."
-        local_ref_fasta="/scratch/${ref_fasta_basename}"
-        start_time=$SECONDS
-        cp "$ref_fasta" "$local_ref_fasta"
-        cp "$ref_fasta".fai "$local_ref_fasta".fai
-        echo "Reference file copied to $local_ref_fasta in $((SECONDS - start_time)) seconds"
-        
-        # If sample name is not set, get it as the basename of inputfile
-        if [ -z "$sample_name" ]; then
-          sample_name=${input_basename%%.*}
-        fi
-        echo "Sample name: $sample_name"
-        
-        # Define output file name based on sample name
-        output_file="${output_folder}/${sample_name}.vcf.gz"
-        echo "Output will be written to: $output_file"
-
-        # Select the appropriate model based on technology
+        # Select model base path
         if [ -z "$model_base_path" ]; then
-          model_base_path="$WORKSPACE_DIR/${RESOURCES_PATH}/${SENTIEON_MODELS_PATH}"
+          echo "No model base path provided, using default model base path..."
+          model_base_path="$WORKSPACE_DIR/${RESOURCES_PATH}/sentieon_models"
           if [ ! -d "$model_base_path" ]; then
             echo "The default models do not exist at $model_base_path"
             echo "Please run the task Download Sentieon Models to download the models and then re-run this task"
             exit 1
           fi
         fi
+
+        # Select model bundle based on technology
         if [ "$tech" = "HiFi" ]; then
           model_file="${model_base_path}/DNAscopePacBio2.1.bundle"
         elif [ "$tech" = "ONT" ]; then
@@ -177,26 +194,102 @@ steps:
           exit 1
         fi
         
+        if [ ! -f "$model_file" ]; then
+          echo "Model bundle does not exist at $model_file. Please run the task Download Sentieon Models to download the models and then re-run this task"
+          exit 1
+        fi
+        
         echo "Using model bundle: $model_file"
 
-        # Create temporary output directory
-        mkdir -p /scratch/output
-        temp_output_file="/scratch/output/${sample_name}.vcf.gz"
+        # Copy input file to work directory for better performance
+        echo "Copying input file to work directory..."
+        local_input_file="$workdir/${input_basename}"
+        start_time=$SECONDS
+        cp "$input_file"* "$workdir"/ || { echo "Failed to copy input file"; exit 1; }
+        echo "Input file copied to $local_input_file in $((SECONDS - start_time)) seconds"
 
-        sentieon-cli dnascope-longread \
-          -r "$local_ref_fasta" \
-          -i "$local_input_file" \
-          -m "$model_file" \
-          -t $AGENT_CPU_CORES \
-          $([ -n "$bed_file" ] && echo "-b \"$bed_file\"") \
-          $([ -n "$haploid_bed" ] && echo "--haploid-bed \"$haploid_bed\"") \
-          $([ "$gvcf" = "true" ] && echo "--gvcf") \
-          --tech "$tech" \
-          $([ "$dry_run" = "true" ] && echo "--dry-run") \
-          $([ "$skip_small_variants" = "true" ] && echo "--skip-small-variants") \
-          $([ "$skip_svs" = "true" ] && echo "--skip-svs") \
-          $([ "$skip_mosdepth" = "true" ] && echo "--skip-mosdepth") \
-          "$temp_output_file"
+        # Copy reference file to work directory
+        echo "Copying reference file to work directory..."
+        local_ref_fasta="$workdir/${ref_fasta_basename}"
+        start_time=$SECONDS
+        cp "$ref_fasta" "$local_ref_fasta" || { echo "Failed to copy reference FASTA"; exit 1; }
+        cp "$ref_fasta".fai "$local_ref_fasta".fai || { echo "Failed to copy reference FASTA index"; exit 1; }
+        echo "Reference file copied to $local_ref_fasta in $((SECONDS - start_time)) seconds"
+        
+        # Define output file name based on sample name
+        output_file="${output_folder}/${sample_name}.vcf.gz"
+        echo "Output will be written to: $output_file"
+
+        # Create temporary output directory
+        mkdir -p "$workdir/output" || { echo "Failed to create temporary output directory"; exit 1; }
+        temp_output_file="$workdir/output/${sample_name}.vcf.gz"
+
+        # Build command arguments
+        cmd_args=(
+          sentieon-cli dnascope-longread
+          -r "$local_ref_fasta"
+          -i "$local_input_file"
+          -m "$model_file"
+          -t $AGENT_CPU_CORES
+          --tech "$tech"
+        )
+
+        # Add optional arguments
+        if [ -n "$bed_file" ]; then
+          cmd_args+=(-b "$bed_file")
+        fi
+        
+        if [ -n "$haploid_bed" ]; then
+          cmd_args+=(--haploid-bed "$haploid_bed")
+        fi
+        
+        if [ "$gvcf" = "true" ]; then
+          cmd_args+=(--gvcf)
+        fi
+        
+        if [ "$dry_run" = "true" ]; then
+          cmd_args+=(--dry-run)
+        fi
+        
+        if [ "$skip_small_variants" = "true" ]; then
+          cmd_args+=(--skip-small-variants)
+        fi
+        
+        if [ "$skip_svs" = "true" ]; then
+          cmd_args+=(--skip-svs)
+        fi
+        
+        if [ "$skip_mosdepth" = "true" ]; then
+          cmd_args+=(--skip-mosdepth)
+        fi
+        
+        cmd_args+=("$temp_output_file")
+
+        echo "*************************"
+        echo "Starting DNAscope analysis..."
+        echo "Command: ${cmd_args[*]}"
+        echo "*************************"
+
+        # Run the analysis
+        start_time=$SECONDS
+        "${cmd_args[@]}" || { echo "DNAscope analysis failed"; exit 1; }
+        duration=$((SECONDS - start_time))
+        echo "DNAscope analysis completed in $duration seconds"
 
         # Move all output files to the destination folder
-        mv /scratch/output/* "$output_folder/"
+        echo "Moving output files to destination folder..."
+        mv "$workdir/output"/* "$output_folder"/ || { echo "Failed to move output files"; exit 1; }
+        
+        # Clean up work directory
+        rm -f "$local_ref_fasta" "$local_ref_fasta".fai "$local_input_file"*
+        
+        echo "*************************"
+        echo "Analysis complete"
+        echo "Output: $output_file"
+        echo "Disk usage: $(du -sh "$output_folder" | cut -f1)"
+        echo "*************************"
+        
+        # Copy log file to output folder
+        cp -f "$logfile" "$output_folder"/ || { echo "Failed to copy log file"; exit 1; }
+        
+        cd "$TASK_DIR"

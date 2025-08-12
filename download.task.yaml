@@ -48,6 +48,13 @@ parameters:
     optional: true
     group: Advanced Options
     help: Defaults to the directory specified by RESOURCES_PATH in Workspace Settings
+    
+  - name: redownload_existing
+    label: Redownload Existing Files
+    type: boolean
+    value: "false"
+    group: Advanced Options
+    help: If enabled, existing files will be redownloaded. If disabled, existing files will be skipped.
   
 steps:
   - name: download_ref
@@ -64,6 +71,18 @@ steps:
             local base_url=$3
             local attempts=0
             local max_attempts=3
+
+            # Check if file exists and redownload is disabled
+            if [ "${redownload_existing}" != "true" ] && [ -f "$filename" ]; then
+                # Still verify the existing file
+                actual_md5=$(md5sum "$filename" | cut -d' ' -f1)
+                if [ "$actual_md5" = "$expected_md5" ]; then
+                    echo "✓ $filename already exists and is verified"
+                    return 0
+                else
+                    echo "✗ Existing file $filename has incorrect checksum, will redownload"
+                fi
+            fi
 
             while [ $attempts -lt $max_attempts ]; do
                 echo "Downloading $filename (attempt $((attempts + 1))/$max_attempts)..."
@@ -136,9 +155,14 @@ steps:
         if [ -z "$BASE_DIR" ]; then 
           BASE_DIR="$WORKSPACE_DIR/${RESOURCES_PATH}"
           if [ ! -d "$BASE_DIR" ]; then
-            echo "The default resource path does not exist or is not a valid directory at $RESOURCES_PATH"
-            echo "Please update the RESOURCES_PATH in Workspace Settings to point to a valid directory that can be used to download the reference and then re-run this task"
-            exit 1
+            echo "The default resource path does not exist at $RESOURCES_PATH"
+            echo "Attempting to create directory..."
+            if ! mkdir -p "$BASE_DIR"; then
+              echo "Failed to create directory at $BASE_DIR"
+              echo "Please update the RESOURCES_PATH in Workspace Settings to point to a valid directory that can be used to download the reference and then re-run this task"
+              exit 1
+            fi
+            echo "Successfully created directory at $BASE_DIR"
           fi
         fi
 
@@ -150,7 +174,7 @@ steps:
             echo "=== Downloading GRCh38 No Alt Reference ==="
             MANIFEST_URL="http://data.goldenhelix.com/d/secondary_analysis/hg38_noalt/manifest.txt"
             BASE_URL="data.goldenhelix.com/d/secondary_analysis/hg38_noalt"
-            TARGET_DIR="$BASE_DIR/resources/hg38_noalt"
+            TARGET_DIR="$BASE_DIR/hg38_noalt"
             download_from_manifest "$MANIFEST_URL" "$BASE_URL" "$TARGET_DIR"
         fi
 
@@ -159,7 +183,7 @@ steps:
             echo "=== Downloading GRCh37 g1k Reference ==="
             MANIFEST_URL="http://data.goldenhelix.com/d/secondary_analysis/b37/manifest.txt"
             BASE_URL="data.goldenhelix.com/d/secondary_analysis/b37"
-            TARGET_DIR="$BASE_DIR/resources/hg37_g1k"
+            TARGET_DIR="$BASE_DIR/hg37_g1k"
             download_from_manifest "$MANIFEST_URL" "$BASE_URL" "$TARGET_DIR"
         fi
 
@@ -168,7 +192,7 @@ steps:
             echo "=== Downloading Sentieon Short Read Models ==="
             MANIFEST_URL="http://data.goldenhelix.com/d/secondary_analysis/models/shortread/manifest.txt"
             BASE_URL="data.goldenhelix.com/d/secondary_analysis/models/shortread"
-            TARGET_DIR="$BASE_DIR/resources/sentieon_models"
+            TARGET_DIR="$BASE_DIR/sentieon_models"
             download_from_manifest "$MANIFEST_URL" "$BASE_URL" "$TARGET_DIR"
         fi
 
@@ -177,7 +201,7 @@ steps:
             echo "=== Downloading Sentieon Long Read Models ==="
             MANIFEST_URL="http://data.goldenhelix.com/d/secondary_analysis/models/longread/manifest.txt"
             BASE_URL="data.goldenhelix.com/d/secondary_analysis/models/longread"
-            TARGET_DIR="$BASE_DIR/resources/sentieon_models"
+            TARGET_DIR="$BASE_DIR/sentieon_models"
             download_from_manifest "$MANIFEST_URL" "$BASE_URL" "$TARGET_DIR"
         fi
 
@@ -186,8 +210,6 @@ steps:
             echo "=== Downloading Sentieon Hybrid Models ==="
             MANIFEST_URL="http://data.goldenhelix.com/d/secondary_analysis/models/hybrid/manifest.txt"
             BASE_URL="data.goldenhelix.com/d/secondary_analysis/models/hybrid"
-            TARGET_DIR="$BASE_DIR/resources/sentieon_models"
+            TARGET_DIR="$BASE_DIR/sentieon_models"
             download_from_manifest "$MANIFEST_URL" "$BASE_URL" "$TARGET_DIR"
         fi
-
-        echo "All selected reference resources have been downloaded successfully!"

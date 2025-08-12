@@ -1,5 +1,6 @@
 name: Sentieon Alignment with Minimap2
 description: Re-align an input BAM/CRAM/uBAM/uCRAM file with minimap2
+auto_generate_session_for_account: "{workspaceBot}"
 
 parameters:
   - name: input_file
@@ -46,11 +47,6 @@ agent_requirements:
   cpu_cores: 32
   memory_gb: 64
 
-# agent_requirements:
-#   cpu_cores: 64
-#   memory_gb: 128
-#   agent_profile: azure_extra_large # azure_cpu_optimized
-
 steps:
   - name: align
     description: Run alignment
@@ -59,14 +55,31 @@ steps:
       image: registry.goldenhelix.com/public/sentieon:202503
     args: 
       - |-
-        set -exvuo pipefail
+        set -eu pipefail
 
         # License configuration
         export SENTIEON_LICENSE="$GH_SERVER:8990"
+        licsrvr=$(sentieon licclnt ping --server "$GH_SERVER:8990")
+        # if [ "$licsrvr" != "0" ]; then
+        #   echo "License server not responding"
+        #   exit 1
+        # else 
+        #   echo "License server responding"
+        # fi
 
-        echo "CPU Cores: $AGENT_CPU_CORES"
+        # Agent setup
+        echo "*************************"
+        echo "Agent allocated..."
+        echo -e "\tCPU Cores: $AGENT_CPU_CORES"
         mem_gb=$((AGENT_MEMORY_GB - 2))
-        echo "Available Memory: ${mem_gb}GB"
+        echo -e "\tAvailable Memory: ${mem_gb}GB"
+
+        # Parameter validation
+        pattern=" | "
+        if [[ "$sample_name" =~ "$pattern" ]]; then
+          echo "Sample name should not contain whitespace"
+          exit 1
+        fi
 
         # If sample name is not set, get it as the basename of inputfile
         if [ -z "$sample_name" ]; then
@@ -74,21 +87,38 @@ steps:
           sample_name="${sample_name%%.*}"
         fi
         echo "Sample name: $sample_name"
+        echo "*************************"
 
         # Define output filename
         output_bam="${output_folder}/${sample_name}_minimap2.bam"
-        if [ -f "${output_bam}" ]; then
-          echo "Output already exists: ${output_bam}"
-          exit 0
-        fi
+        #if [ -f "${output_bam}" ]; then
+        #  echo "Output already exists: ${output_bam}"
+        #  exit 0
+        #fi
+
+        # Create output directory if it doesn't exist
+        mkdir -p "$output_folder" || { echo "Failed to create output directory"; exit 1; }
 
         # Use scratch directory for temporary files
-        temp_dir=/scratch
-        mkdir -p "$temp_dir"
-        cd "$temp_dir"
+        workdir="/scratch"
+        mkdir -p "$workdir" || { echo "Failed to create work directory"; exit 1; }
+        cd "$workdir" || { echo "Failed to change to work directory"; exit 1; }
+        
+        # Set up logging
+        logfile=${sample_name}_minimap2_run.log
+        exec > >(tee -a "$logfile") 2>&1 || { echo "Failed to redirect stdout and stderr to $logfile"; exit 1; }
 
-        # If ref_fasta is not set, use the default reference file
+        echo "*************************"
+        echo "Running Sentieon Minimap2 Alignment..."
+        echo "Input file: $input_file"
+        echo "Output: $output_bam"
+        echo "Technology: $tech"
+        echo "*************************"
+
+        # Select reference file
+        echo "Selecting reference file..."
         if [ -z "$ref_fasta" ]; then
+          echo "No reference file provided, using default reference file..."
           ref_fasta="$WORKSPACE_DIR/${RESOURCES_PATH}/${REFERENCE_PATH}"
           if [ ! -f "$ref_fasta" ]; then
             echo "The default reference file does not exist at $ref_fasta"
@@ -97,25 +127,18 @@ steps:
           fi
         fi
 
-        # Copy reference file and input file to scratch directory
-        echo "Copying reference file and input file to scratch directory..."
-        ref_fasta_basename=$(basename "$ref_fasta")
-        input_file_basename=$(basename "$input_file")
-        start_time=$SECONDS
-        cp "$ref_fasta" ./"$ref_fasta_basename"
-        cp "$ref_fasta".fai ./"$ref_fasta_basename".fai
-        cp "$input_file" ./"$input_file_basename"
-        echo "Reference file and input file copied to $ref_fasta_basename and $input_file_basename in $((SECONDS - start_time)) seconds"
-
-        # If model_base_path is not set, use the default models
+        # Select model base path
         if [ -z "$model_base_path" ]; then
-          model_base_path="$WORKSPACE_DIR/${RESOURCES_PATH}/${SENTIEON_MODELS_PATH}"
+          echo "No model base path provided, using default model base path..."
+          model_base_path="$WORKSPACE_DIR/${RESOURCES_PATH}/sentieon_models"
           if [ ! -d "$model_base_path" ]; then
             echo "The default models do not exist at $model_base_path"
             echo "Please run the task Download Sentieon Models to download the models and then re-run this task"
             exit 1
           fi
         fi
+
+        # Select model bundle based on technology
         if [ "$tech" == "ONT" ]; then
           model_bundle="${model_base_path}/DNAscopeONT2.1.bundle"
         elif [ "$tech" == "HiFi" ]; then
@@ -125,44 +148,81 @@ steps:
           exit 1
         fi
 
+        if [ ! -f "$model_bundle" ]; then
+          echo "Model bundle does not exist at $model_bundle. Please run the task Download Sentieon Models to download the models and then re-run this task"
+          exit 1
+        fi
+        echo "Using model bundle: $model_bundle"
+
+        # Copy reference file and input file to work directory
+        echo "Copying reference file and input file to work directory..."
+        ref_fasta_basename=$(basename "$ref_fasta")
+        input_file_basename=$(basename "$input_file")
+        start_time=$SECONDS
+        cp "$ref_fasta" ./"$ref_fasta_basename" || { echo "Failed to copy reference FASTA"; exit 1; }
+        cp "$ref_fasta".fai ./"$ref_fasta_basename".fai || { echo "Failed to copy reference FASTA index"; exit 1; }
+        cp "$input_file" ./"$input_file_basename" || { echo "Failed to copy input file"; exit 1; }
+        echo "Reference file and input file copied to $ref_fasta_basename and $input_file_basename in $((SECONDS - start_time)) seconds"
+
         # Set read group information
         read_group="@RG\tID:${sample_name}\tSM:${sample_name}\tPL:PACBIO"
-        
-        echo "Input file: $input_file"
-        echo "Output: $output_bam"
         
         # Run the alignment
         start_time=$SECONDS
         
         # Run minimap2 and pipe to sorting utility
         # Check file extension and process accordingly
-        if [[ "$input_file" == *.bam ]]; then
+        if [[ "$input_file" == *.bam ]] || [[ "$input_file" == *.cram ]]; then
           echo "Processing BAM/CRAM with FASTQ conversion"
-          ( samtools fastq -@ $AGENT_CPU_CORES -T '*' "$input_file" | \
+          { ( samtools fastq -@ $AGENT_CPU_CORES -T '*' "$input_file_basename" | \
             sentieon minimap2 -y -t $AGENT_CPU_CORES -a -Y -R "$read_group" \
             -x "${model_bundle}/minimap2.model" "$ref_fasta_basename" - || \
-            { echo "Minimap2 error"; exit 1; } ) | \
-            sentieon util sort -o "${sample_name}_minimap2.bam" -t $AGENT_CPU_CORES --sam2bam -i - || \
-            { echo "Alignment failed"; exit 1; }
+            { echo "Minimap2 error"; false; } ) \
+            2>&3 | sentieon util sort -o "${sample_name}_minimap2.bam" -t $AGENT_CPU_CORES --sam2bam -i - ;} \
+            3>&1 1>&2 || { echo "Alignment failed"; exit 1; }
         else
           echo "Processing FASTQ input directly"
-          ( sentieon minimap2 -y -t $AGENT_CPU_CORES -a -Y -R "$read_group" \
+          { ( sentieon minimap2 -y -t $AGENT_CPU_CORES -a -Y -R "$read_group" \
             -x "${model_bundle}/minimap2.model" "$ref_fasta_basename" "$input_file_basename" || \
-            { echo "Minimap2 error"; exit 1; } ) | \
-            sentieon util sort -o "${sample_name}_minimap2.bam" -t $AGENT_CPU_CORES --sam2bam -i - || \
-            { echo "Alignment failed"; exit 1; }
+            { echo "Minimap2 error"; false; } ) \
+            2>&3 | sentieon util sort -o "${sample_name}_minimap2.bam" -t $AGENT_CPU_CORES --sam2bam -i - ;} \
+            3>&1 1>&2 || { echo "Alignment failed"; exit 1; }
         fi
-        #  --cram_write_options version=3.0,compressor=rans 
+
         duration=$((SECONDS - start_time))
         file_size=$(stat -c%s "${sample_name}_minimap2.bam")
-        cp "${sample_name}_minimap2.bam"* "$output_folder"
-        rm "$ref_fasta_basename" "$input_file_basename"
-        
         echo "Alignment completed in $duration seconds"
         echo "Output file size: $file_size bytes"
-        echo "Output: $output_folder/${sample_name}_minimap2.bam"
+
+        # Copy output files to output folder
+        cp "${sample_name}_minimap2.bam"* "$output_folder" || { echo "Failed to copy output files"; exit 1; }
         
-        # Print total disk usage of output directory
+        echo "*************************"
+        echo "Alignment complete"
+        echo "Output: $output_folder/${sample_name}_minimap2.bam"
         echo "Disk usage: $(du -sh "$output_folder" | cut -f1)"
+        echo "*************************"
+        
+        # Copy log file to output folder
+        cp -f "$logfile" "$output_folder"/ || { echo "Failed to copy log file"; exit 1; }
         
         cd "$TASK_DIR"
+
+  - name: update_sample_catalog
+    description: Add Minimap2 Output to Sample Catalog
+    type: cmd
+    docker:
+      image: ${VSPIPELINE_DOCKER_IMAGE}
+    args:
+      - |-
+        set -eu pipefail
+
+        export GOLDENHELIX_USERDATA=${WORKSPACE_DIR}/AppData
+
+        cd "${output_folder}"
+        output_bam_path="${output_folder//${WORKSPACE_DIR}\//}/${sample_name}_minimap2.bam"
+        gautil client catalog-upsert SampleCatalog \
+          Sample="$sample_name" \
+          BAMPath="$output_bam_path" || \
+          { echo "Failed to update sample catalog"; exit 1; }
+        echo "Updated sample $sample_name with BAM: ${output_bam_path}"
