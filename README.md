@@ -1,3 +1,5 @@
+> **DEPRECATED:** This repository is deprecated. Please use https://github.com/goldenhelix/sentieon-secondary-analysis/ going forward. This README and the repository is retained for reference only.
+
 # Sentieon Long Reads
 
 This repository contains workflows for long-read genomic analysis using Sentieon's genomics tools. For detailed information about Sentieon's tools and algorithms, please refer to the [Sentieon Manual](https://support.sentieon.com/manual/).
